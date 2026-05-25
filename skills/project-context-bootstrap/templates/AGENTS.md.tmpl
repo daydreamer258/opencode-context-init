@@ -1,0 +1,42 @@
+# {{项目名}}
+
+> {{一句话描述}}
+
+## 项目类型
+
+{{项目类型}}
+
+## 关键命令
+
+| 操作 | 命令 |
+|---|---|
+| 构建 | `{{构建命令}}` |
+| 运行 | `{{运行命令}}` |
+| 测试 | `{{测试命令}}` |
+| {{其他常用操作}} | `{{对应命令}}` |
+
+## 详细文档
+
+完整的项目知识库分布在以下文件，按需查阅：
+
+- **业务概述**：[docs/agent/overview.md](docs/agent/overview.md) — 项目是干什么的、给谁用的、关键术语
+- **构建与运行**：[docs/agent/build-and-run.md](docs/agent/build-and-run.md) — 完整构建流程、代码生成步骤、环境依赖
+- **约定与风格**：[docs/agent/conventions.md](docs/agent/conventions.md) — 包结构、命名、注入方式、错误处理
+- **陷阱清单**：[docs/agent/gotchas.md](docs/agent/gotchas.md) — 已知坑点、新人易踩的陷阱
+- **AI 边界**：[docs/agent/boundaries.md](docs/agent/boundaries.md) — 不该改的目录、敏感文件、只读区
+
+## 给 Agent 的元规则
+
+修改代码或回答问题前，请遵守：
+
+1. **先查边界**：动手前必须查 [docs/agent/boundaries.md](docs/agent/boundaries.md)，确认目标文件不在禁区
+2. **遵守约定**：写新代码时参照 [docs/agent/conventions.md](docs/agent/conventions.md) 的风格，不要按通用最佳实践想当然
+3. **避开陷阱**：动到 [docs/agent/gotchas.md](docs/agent/gotchas.md) 涉及的区域时，先重读对应条目
+4. **自我演化**：当你发现项目存在**未被文档化**的约定、陷阱或习惯做法时，**主动提议**追加到 `AGENTS.md` 或 `docs/agent/` 对应文件。在用户确认后再写入。不要默默修改。
+5. **遇到不确定，就问**：宁可问一次用户，也不要按猜测改代码。
+
+{{项目特有的元规则}}
+
+---
+
+*本文件由 `/init-project` 生成，可手动编辑。*
