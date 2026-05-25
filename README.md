@@ -38,15 +38,17 @@ Command（工作流）                                                  + docs/a
 │   ├── init-project.md                    # /init-project 命令本体
 │   └── remember.md                        # /remember 命令：显式追加项目知识
 └── skills/
-    └── project-context-bootstrap/
-        ├── SKILL.md                       # 哨兵：检测缺失并提示
-        └── templates/
-            ├── AGENTS.md.tmpl             # 根文档模板
-            ├── overview.md.tmpl           # 业务概述
-            ├── build-and-run.md.tmpl      # 构建与运行
-            ├── conventions.md.tmpl        # 约定与风格
-            ├── gotchas.md.tmpl            # 陷阱清单
-            └── boundaries.md.tmpl         # AI 边界
+    ├── project-context-bootstrap/
+    │   ├── SKILL.md                       # 哨兵：检测缺失并提示
+    │   └── templates/
+    │       ├── AGENTS.md.tmpl             # 根文档模板
+    │       ├── overview.md.tmpl           # 业务概述
+    │       ├── build-and-run.md.tmpl      # 构建与运行
+    │       ├── conventions.md.tmpl        # 约定与风格
+    │       ├── gotchas.md.tmpl            # 陷阱清单
+    │       └── boundaries.md.tmpl         # AI 边界
+    └── project-memory-assistant/
+        └── SKILL.md                       # 记忆助手：监听用户陈述并主动询问归档
 ```
 
 ### 2.2 职责分工
@@ -54,6 +56,7 @@ Command（工作流）                                                  + docs/a
 | 组件 | 类型 | 触发方式 | 职责 |
 |---|---|---|---|
 | `project-context-bootstrap` | Skill | 模型按 description 自动判断 | 进入新项目时检测缺失 `AGENTS.md`，建议用户运行 `/init-project`。不直接生成。 |
+| `project-memory-assistant` | Skill | 模型按 description 自动判断 | 监听用户陈述。一旦发现"项目级事实/约定/陷阱"，主动询问是否归档。仅在已有 `AGENTS.md` 时启用。 |
 | `init-project` | Command | 用户显式输入 `/init-project` | 执行 5 阶段工作流，**首次**生成全部产物。 |
 | `remember` | Command | 用户显式输入 `/remember <内容>` | 把一条新项目知识追加到对应文档（保持现有内容不变）。 |
 | `templates/` | 资源文件 | 被 Command 读取 | 提供产物的中文骨架。 |
@@ -76,15 +79,17 @@ opencode-context-init/        # 本仓库根
 │   ├── init-project.md       # 首次生成知识库
 │   └── remember.md           # 追加单条项目知识
 └── skills/
-    └── project-context-bootstrap/
-        ├── SKILL.md
-        └── templates/
-            ├── AGENTS.md.tmpl
-            ├── overview.md.tmpl
-            ├── build-and-run.md.tmpl
-            ├── conventions.md.tmpl
-            ├── gotchas.md.tmpl
-            └── boundaries.md.tmpl
+    ├── project-context-bootstrap/
+    │   ├── SKILL.md          # 哨兵：检测缺失并提示
+    │   └── templates/
+    │       ├── AGENTS.md.tmpl
+    │       ├── overview.md.tmpl
+    │       ├── build-and-run.md.tmpl
+    │       ├── conventions.md.tmpl
+    │       ├── gotchas.md.tmpl
+    │       └── boundaries.md.tmpl
+    └── project-memory-assistant/
+        └── SKILL.md          # 记忆助手：监听陈述、主动询问归档
 ```
 
 ### 3.2 安装步骤
@@ -115,6 +120,7 @@ $repo = "$PWD"
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\commands\init-project.md" -Target "$repo\commands\init-project.md"
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\commands\remember.md"     -Target "$repo\commands\remember.md"
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\project-context-bootstrap" -Target "$repo\skills\project-context-bootstrap"
+New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\project-memory-assistant" -Target "$repo\skills\project-memory-assistant"
 ```
 
 ```bash
@@ -122,6 +128,7 @@ New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\
 ln -s "$PWD/commands/init-project.md" ~/.config/opencode/commands/init-project.md
 ln -s "$PWD/commands/remember.md"     ~/.config/opencode/commands/remember.md
 ln -s "$PWD/skills/project-context-bootstrap" ~/.config/opencode/skills/project-context-bootstrap
+ln -s "$PWD/skills/project-memory-assistant" ~/.config/opencode/skills/project-memory-assistant
 ```
 
 ### 3.3 验证安装
@@ -277,7 +284,7 @@ Agent 列出生成清单：
 
 ## 7. 自我演化机制
 
-知识库通过**两种互补的方式**持续增长：
+知识库通过**三种互补的方式**持续增长：
 
 ### 7.1 被动演化（元规则驱动）
 
@@ -285,11 +292,23 @@ Agent 列出生成清单：
 
 > **元规则 4**：当你（Agent）在工作中发现项目存在未被文档化的约定、陷阱或习惯做法时，主动提议追加到 `AGENTS.md` 或 `docs/agent/` 对应文件。在用户确认后再写入。
 
-**适用场景**：Agent 自己干活时踩到坑或发现新约定。
+**适用场景**：Agent **自己干活时**踩到坑或发现新约定。
 
-**局限**：依赖模型每次会话都"想起"这条规则，并且能识别"这条信息值得归档"。对于用户**顺嘴**提的事情，容易漏掉。
+**局限**：依赖模型每次会话都"想起"这条规则，对用户顺嘴提的事容易漏掉——所以有 7.2 的记忆助手补位。
 
-### 7.2 主动追加（`/remember` 命令）
+### 7.2 半自动捕获（记忆助手 Skill）
+
+`project-memory-assistant` Skill 在后台监听用户陈述。当用户在对话中**顺嘴**提到项目级事实/约定/陷阱（如"我们都用 HikariCP"、"对了这里要注意 ..."），Skill 主动询问：
+
+> 听起来这是一条项目级约定。要不要我帮你记到 `docs/agent/conventions.md`？
+
+用户确认后，按 `/remember` 的工作流追加。
+
+**适用场景**：用户在做别的事，不会专门停下来归档，但顺口提了一条该记的事。
+
+**节流**：每会话最多触发 3 次；用户拒绝过的不再问；判断不确定时倾向不触发——误打扰代价大于漏记。
+
+### 7.3 主动追加（`/remember` 命令）
 
 用户随时可以显式触发：
 
@@ -305,17 +324,18 @@ Agent 列出生成清单：
 4. 给用户预览并确认
 5. **追加**（不覆盖）到对应文件
 
-**适用场景**：用户主动想归档一条事实、约定或规则，不依赖 Agent 自己注意到。
+**适用场景**：用户明确想归档一条事实，不依赖 Agent 自己注意到。
 
-### 7.3 组合效果
+### 7.4 组合效果
 
-| 触发方 | 机制 | 命令 |
+| 触发方 | 机制 | 命令/组件 |
 |---|---|---|
-| Agent 自己发现 | 元规则 4 自动提议 | （无需命令） |
-| 用户主动归档 | 显式追加 | `/remember <内容>` |
 | 项目首次初始化 | 5 阶段访谈 | `/init-project` |
+| Agent 自己发现 | 元规则 4 自动提议 | （AGENTS.md 内嵌规则） |
+| 用户顺嘴提到 | 记忆助手监听 + 询问 | `project-memory-assistant` Skill |
+| 用户主动归档 | 显式追加 | `/remember <内容>` |
 
-三者覆盖了"从零开始"、"随用随补"、"长期演化"三种典型场景，且用户始终掌握"是否写入"的最终决定权。
+四者覆盖了"从零开始"、"Agent 主动"、"半自动捕获"、"用户主动"四类典型场景，且用户始终掌握"是否写入"的最终决定权。
 
 ---
 
@@ -326,7 +346,7 @@ Agent 列出生成清单：
 | 跨工具策略 | 只生成 `AGENTS.md`（不复制为 CLAUDE.md 等） | opencode 原生读 AGENTS.md；AGENTS.md 已是跨工具事实标准 |
 | 触发方式 | Skill（哨兵）+ Command（工作流） | 提醒与执行解耦，避免误触发写盘 |
 | 问题清单 | 通用一套 | 起步简单，未来按项目类型扩展 |
-| 维护机制 | 元规则被动演化 + `/remember` 主动追加 | 覆盖"Agent 自己发现"和"用户主动归档"两类场景 |
+| 维护机制 | 元规则被动 + 记忆助手半自动 + `/remember` 主动 | 三档触发覆盖 Agent 主动、用户顺嘴、用户显式三类场景 |
 | 文档目录 | `docs/agent/`（单数） | 工具中立；与 opencode 自身的 `agents/`（复数）区分 |
 | 哨兵积极度 | 仅在代码项目无 AGENTS.md 时提示一次 | 不烦人 |
 | 模板示例 | 占位符 + 通用说明，不绑定具体语言 | 适应多技术栈，避免无关示例污染 |
@@ -351,7 +371,7 @@ Agent 列出生成清单：
 1. 在任意空项目目录运行 `/init-project`，10 分钟内通过对话生成出合理的 `AGENTS.md` + `docs/agent/`
 2. 哨兵 Skill 在无 AGENTS.md 时提示一次，有 AGENTS.md 时完全静默
 3. 生成的 AGENTS.md 在新会话被 opencode 自动加载
-4. 后续会话中，Agent 发现新约定时主动建议追加（元规则生效）；用户输入 `/remember <内容>` 能正确分类并追加到对应文档
+4. 后续会话中：Agent 发现新约定时主动建议追加（元规则生效）；用户顺嘴提到项目级事实时记忆助手会询问归档；用户输入 `/remember <内容>` 能正确分类并追加到对应文档
 5. 全部产物为中文
 
 ---
