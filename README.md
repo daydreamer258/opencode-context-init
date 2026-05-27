@@ -1,100 +1,148 @@
-# 项目上下文初始化器（Project Context Bootstrap）
+# 项目记忆资产体系（v2）
 
-一套用户级的 opencode 资产，用于在任意项目首次进入时，通过交互式访谈自动生成项目专属的 Agent 文档体系（`AGENTS.md` + `docs/agent/`）。
-
-文档全中文输出，安装一次，所有项目可用。
+一套用户级的 opencode 资产，按 **19 条项目记忆资产设计原则**为任意项目建立、维护、审计专属的记忆库。
 
 ---
 
-## 1. 解决的问题
+## 1. 解决什么问题
 
-通用 AI 编程 Agent 在面对具体项目时无法从代码自动推断的信息：
+通用 AI Agent 在面对具体项目时反复犯同样的错——**因为没有把项目专属的"代码推不出来的知识"沉淀下来**：
 
-- 业务意图（项目是干什么的、给谁用的）
-- 非标准构建流程（如 yaml → `mvn compile` → 接口代码生成）
-- 团队约定（包结构、命名、注入方式）
-- 历史坑点（新人最常踩的陷阱）
-- AI 不该碰的边界（敏感目录、只读区、生成代码）
+- 团队为什么这样设计 / 不能怎样做 / 踩过什么坑
+- 跨多个文件才能拼出的业务逻辑
+- 看似合理但行不通的方案
+- AI 在本项目里的能力边界与禁区
 
-这些信息一旦显式写下来，Agent 在后续会话能直接读取，避免反复犯同样的错。
+本仓库的资产**强制**以原则约束记忆库的"准入、结构、迭代"，避免记忆库变成垃圾堆。
 
 ---
 
-## 2. 整体架构
+## 2. 19 条原则速览
+
+| # | 原则 | 落地点 |
+|---|---|---|
+| 1 | 不可推导性原则 | `/remember` 过滤 1 + `init-project` 不问可推导事 |
+| 2 | 探索成本阈值原则 | `failure-loop` 触发条件之一 |
+| 3 | 不变性优先原则 | 条目模板强制"为什么"字段 |
+| 4 | 痛苦换来的知识优先 | `init-project` Phase 2 C 组 + `gotcha` 类型 |
+| 5 | AGENTS.md 作为唯一入口 | AGENTS.md § 4 文档索引 |
+| 6 | 摘要-详情分层 | 索引写"何时读"而非"写了什么" |
+| 7 | 模块边界对齐 | `docs/agent/<module>.md` 按代码模块组织 |
+| 8 | 可发现性原则 | 每个 doc 头部 frontmatter（触发条件/最后更新/关联代码） |
+| 9 | 用户驱动写入 | 所有 Skill 只建议、不写盘；写盘必须经 `/remember` 等命令 |
+| 10 | 写入前 dedupe | `/remember` 过滤 3、4 |
+| 11 | 衰减与审计 | 时间戳字段 + `/audit-memory` 命令 + `memory-auditor` Skill |
+| 12 | 原子化条目 | 条目模板（ID + 字段 + 内容） |
+| 13 | 项目类型识别 | AGENTS.md § 1 项目元信息 |
+| 14 | 能力清单与禁区 | AGENTS.md § 2 |
+| 15 | 工作流钩子 | AGENTS.md § 3 |
+| 16 | 优先 Skill 而非 Command | `memory-entry-writer` / `memory-auditor` Skill 共享逻辑 |
+| 17 | 写入有模板，读取无模板 | 强制条目结构（写入时） |
+| 18 | 失败回路 | `failure-loop` Skill |
+| 19 | 不放秘密、不放快变数据 | `/remember` 过滤 2 |
+
+---
+
+## 3. 整体架构
 
 ```
-用户级安装                       项目级产出                  运行时效果
-───────────                     ───────────                ────────────
-Skill（哨兵）         ──触发──►   /init-project        ──产出──►   AGENTS.md
-Command（工作流）                                                  + docs/agent/
-                                                                  + 元规则自演化
+用户级安装（~/.config/opencode/）          项目级产出（项目根/）
+─────────────────────────────              ──────────────────────
+commands/                                  AGENTS.md（4 段固定结构）
+  init-project                                § 1 项目元信息
+  remember                                    § 2 能力清单与禁区
+  forget                                      § 3 工作流钩子
+  update-memory                               § 4 文档索引（何时读）
+  audit-memory                                § 5 给 Agent 的元规则
+                                           
+skills/                                    docs/agent/
+  project-context-bootstrap (哨兵)            _global.md（G-NNN 全局条目）
+  project-memory-assistant (建议)             <module-A>.md（M-NNN 模块条目）
+  failure-loop (建议)                         <module-B>.md
+  memory-entry-writer (共享逻辑)              ...
+  memory-auditor (共享逻辑)
 ```
 
-### 2.1 用户级文件布局
+### 3.1 用户级文件布局
 
 ```
 ~/.config/opencode/
 ├── commands/
-│   ├── init-project.md                    # /init-project 命令本体
-│   └── remember.md                        # /remember 命令：显式追加项目知识
+│   ├── init-project.md       # /init-project — 首次生成记忆库
+│   ├── remember.md           # /remember <内容> — 追加单条原子条目
+│   ├── forget.md             # /forget <ID> — 删除条目
+│   ├── update-memory.md      # /update-memory <ID> — 更新条目
+│   └── audit-memory.md       # /audit-memory — 审计陈旧条目
 └── skills/
     ├── project-context-bootstrap/
-    │   ├── SKILL.md                       # 哨兵：检测缺失并提示
+    │   ├── SKILL.md          # 哨兵：检测缺失 AGENTS.md 时建议跑 /init-project
     │   └── templates/
-    │       ├── AGENTS.md.tmpl             # 根文档模板
-    │       ├── overview.md.tmpl           # 业务概述
-    │       ├── build-and-run.md.tmpl      # 构建与运行
-    │       ├── conventions.md.tmpl        # 约定与风格
-    │       ├── gotchas.md.tmpl            # 陷阱清单
-    │       └── boundaries.md.tmpl         # AI 边界
-    └── project-memory-assistant/
-        └── SKILL.md                       # 记忆助手：监听用户陈述并主动询问归档
+    │       ├── AGENTS.md.tmpl      # 4 段结构根模板
+    │       ├── _global.md.tmpl     # 全局条目模板
+    │       └── _module.md.tmpl     # 模块条目模板
+    ├── project-memory-assistant/
+    │   └── SKILL.md          # 对话进行中建议跑 /remember（仅建议、不写盘）
+    ├── failure-loop/
+    │   └── SKILL.md          # 任务结束时自检"早知道就好"的教训
+    ├── memory-entry-writer/
+    │   └── SKILL.md          # 原子条目的"如何写"共享规范
+    └── memory-auditor/
+        └── SKILL.md          # 审计陈旧条目的共享逻辑
 ```
 
-### 2.2 职责分工
+### 3.2 职责分工
 
-| 组件 | 类型 | 触发方式 | 职责 |
+| 组件 | 类型 | 触发 | 职责 |
 |---|---|---|---|
-| `project-context-bootstrap` | Skill | 模型按 description 自动判断 | 进入新项目时检测缺失 `AGENTS.md`，建议用户运行 `/init-project`。不直接生成。 |
-| `project-memory-assistant` | Skill | 模型按 description 自动判断 | 监听用户陈述。一旦发现"项目级事实/约定/陷阱"，主动询问是否归档。仅在已有 `AGENTS.md` 时启用。 |
-| `init-project` | Command | 用户显式输入 `/init-project` | 执行 5 阶段工作流，**首次**生成全部产物。 |
-| `remember` | Command | 用户显式输入 `/remember <内容>` | 把一条新项目知识追加到对应文档（保持现有内容不变）。 |
-| `templates/` | 资源文件 | 被 Command 读取 | 提供产物的中文骨架。 |
+| `init-project` | Command | 用户显式 `/init-project` | 5 阶段访谈 + 模块识别 → 生成 AGENTS.md（4 段）+ `_global.md` + 各模块 doc |
+| `remember` | Command | 用户显式 `/remember <内容>` | 过滤（推导/秘密/重复/冲突）→ 原子条目 → 用户确认 → 追加 |
+| `forget` | Command | 用户显式 `/forget <ID>` | 二次确认 → 删除条目（保留 git 痕迹） |
+| `update-memory` | Command | 用户显式 `/update-memory <ID>` | 展示当前 → 应用修改 → 自动刷新"最后验证" |
+| `audit-memory` | Command | 用户显式 `/audit-memory` | 扫描 5 类问题 → 报告 → 用户处置 |
+| `project-context-bootstrap` | Skill | 自动 | 无 AGENTS.md 时提示用户跑 `/init-project` |
+| `project-memory-assistant` | Skill | 自动 | 对话中用户陈述项目级事实时**建议** `/remember`，不写盘 |
+| `failure-loop` | Skill | 自动 | 任务结束时自检"早知道就好"的教训，**建议** `/remember` |
+| `memory-entry-writer` | Skill | 被命令调用 | 原子条目格式规范 + 过滤逻辑（共享） |
+| `memory-auditor` | Skill | 被命令调用 | 审计扫描的 5 类问题判定（共享） |
 
-**为什么 Skill 不直接生成？**
-Skill 由模型自动触发，存在误触发风险。文件生成是写盘操作，应该由用户显式发起。哨兵 + 命令的双层设计让"提醒"与"执行"解耦。
+**为什么 Skill 与 Command 分工？**（原则 16）
+
+- **Command** = 轻量入口、用户触发、做一件具体的事。`/remember` 用户每次记一条用。
+- **Skill** = 共享逻辑、可被多入口复用、避免格式漂移。`memory-entry-writer` 定义"如何写一条合规条目"，被 `/remember` 和 `/update-memory` 都引用。
 
 ---
 
-## 3. 安装方式
+## 4. 安装方式
 
-本仓库的目录结构**完全对齐** `~/.config/opencode/` 的标准布局，安装即"复制"。
+仓库结构对齐 `~/.config/opencode/`。
 
-### 3.1 仓库结构
+### 4.1 仓库结构
 
 ```
-opencode-context-init/        # 本仓库根
-├── README.md                 # 本文档
+opencode-context-init/
+├── README.md
 ├── commands/
-│   ├── init-project.md       # 首次生成知识库
-│   └── remember.md           # 追加单条项目知识
+│   ├── init-project.md
+│   ├── remember.md
+│   ├── forget.md
+│   ├── update-memory.md
+│   └── audit-memory.md
 └── skills/
     ├── project-context-bootstrap/
-    │   ├── SKILL.md          # 哨兵：检测缺失并提示
+    │   ├── SKILL.md
     │   └── templates/
     │       ├── AGENTS.md.tmpl
-    │       ├── overview.md.tmpl
-    │       ├── build-and-run.md.tmpl
-    │       ├── conventions.md.tmpl
-    │       ├── gotchas.md.tmpl
-    │       └── boundaries.md.tmpl
-    └── project-memory-assistant/
-        └── SKILL.md          # 记忆助手：监听陈述、主动询问归档
+    │       ├── _global.md.tmpl
+    │       └── _module.md.tmpl
+    ├── project-memory-assistant/SKILL.md
+    ├── failure-loop/SKILL.md
+    ├── memory-entry-writer/SKILL.md
+    └── memory-auditor/SKILL.md
 ```
 
-### 3.2 安装步骤
+### 4.2 安装步骤
 
-**方案 A：直接复制**（最简单，适合不打算更新）
+**方案 A：直接复制**
 
 ```powershell
 # Windows PowerShell
@@ -112,274 +160,193 @@ cp -r commands ~/.config/opencode/
 cp -r skills   ~/.config/opencode/
 ```
 
-**方案 B：符号链接**（推荐，仓库更新后立即生效）
+**方案 B：符号链接**（仓库更新自动生效）
 
 ```powershell
-# Windows PowerShell（需要管理员或开启开发者模式）
+# Windows PowerShell（需管理员或开发者模式）
 $repo = "$PWD"
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\commands\init-project.md" -Target "$repo\commands\init-project.md"
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\commands\remember.md"     -Target "$repo\commands\remember.md"
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\project-context-bootstrap" -Target "$repo\skills\project-context-bootstrap"
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\project-memory-assistant" -Target "$repo\skills\project-memory-assistant"
+foreach ($cmd in @("init-project","remember","forget","update-memory","audit-memory")) {
+    New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\commands\$cmd.md" -Target "$repo\commands\$cmd.md"
+}
+foreach ($skill in @("project-context-bootstrap","project-memory-assistant","failure-loop","memory-entry-writer","memory-auditor")) {
+    New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\opencode\skills\$skill" -Target "$repo\skills\$skill"
+}
 ```
 
 ```bash
 # macOS / Linux
-ln -s "$PWD/commands/init-project.md" ~/.config/opencode/commands/init-project.md
-ln -s "$PWD/commands/remember.md"     ~/.config/opencode/commands/remember.md
-ln -s "$PWD/skills/project-context-bootstrap" ~/.config/opencode/skills/project-context-bootstrap
-ln -s "$PWD/skills/project-memory-assistant" ~/.config/opencode/skills/project-memory-assistant
+for cmd in init-project remember forget update-memory audit-memory; do
+    ln -s "$PWD/commands/$cmd.md" ~/.config/opencode/commands/$cmd.md
+done
+for skill in project-context-bootstrap project-memory-assistant failure-loop memory-entry-writer memory-auditor; do
+    ln -s "$PWD/skills/$skill" ~/.config/opencode/skills/$skill
+done
 ```
 
-### 3.3 验证安装
+### 4.3 验证安装
 
-启动 opencode，输入 `/init-project`，如果命令被识别即安装成功。
-
-`opencode.json` 不需要改动——opencode 自动扫描这些标准路径。
+启动 opencode，输入 `/init-project` 看是否识别。
 
 ---
 
-## 4. 使用流程（用户视角）
+## 5. 使用流程
 
-### 首次进入一个新项目
+### 5.1 新项目首次接入
 
 ```
-1. cd 到项目根目录，启动 opencode
-2. 简单问一句话（例如"帮我看下这个项目"）
-3. 哨兵 Skill 检测到无 AGENTS.md，提示：
-   "这个项目还没有 AGENTS.md，建议运行 /init-project 生成项目知识库。"
-4. 用户输入 /init-project
-5. Agent 走完 5 阶段工作流（详见第 5 节）
-6. 产物写入项目根：AGENTS.md + docs/agent/
+1. cd 到项目根，启动 opencode
+2. 哨兵 Skill 自动提示："这个项目没有 AGENTS.md，建议跑 /init-project"
+3. 跑 /init-project
+4. 走完 5 阶段访谈（Discover → Interview → 模块确认 → Draft → Review → Finalize）
+5. 产物落盘：AGENTS.md + docs/agent/_global.md + docs/agent/<module>.md × N
 ```
 
-### 之后的日常使用
+访谈中重点：
+- A 组：**验证**自动扫描的发现（不问可推导事）
+- B 组：能力清单 + 禁区
+- C 组：**痛苦换来的知识**（最高价值）
+- D 组：工作流钩子（"做 X 前先读 Y"）
 
-- `AGENTS.md` 被 opencode 自动加载到每次会话上下文
-- Agent 在工作中发现未文档化的约定时，主动建议追加（元规则驱动）
-- 用户可以随时手动编辑 `AGENTS.md` 或 `docs/agent/` 下任意文件
+### 5.2 日常增量记忆
 
-### 重新初始化
+四种途径，**全部用户驱动**（原则 9）：
 
-如果想从头来过，删掉 `AGENTS.md` 再跑 `/init-project` 即可。Command 不会覆盖已有文件，会先警告。
+| 场景 | 命令 |
+|---|---|
+| 你想记一条事实/决策/陷阱 | `/remember <内容>` |
+| 你想删一条过时记忆 | `/forget <ID>` 或 `/forget <关键词>` |
+| 你想更新一条记忆并刷新验证时间 | `/update-memory <ID>` |
+| 定期检查记忆库健康度 | `/audit-memory` |
+
+Agent 自动行为（**仅建议**）：
+
+- 对话中你陈述项目级事实 → `project-memory-assistant` 建议你跑 `/remember`
+- 任务结束 Agent 自检 → `failure-loop` 建议你把教训记下来
+- 任何写盘**必须**由用户显式跑命令
 
 ---
 
-## 5. `/init-project` 工作流详解
+## 6. 产物结构详解
 
-### Phase 1：Discover（静默扫描）
-
-Agent 不打扰用户，自动收集：
-
-- **项目类型识别**：检查 `pom.xml` / `package.json` / `Cargo.toml` / `requirements.txt` / `go.mod` / `Gemfile` 等标志文件
-- **构建脚本**：从 `scripts` 字段 / `Makefile` / `pom.xml` 的 plugin 段抓取
-- **目录结构**：列顶层目录，标记非标准布局
-- **代码生成信号**：检测 `*-generated/`、`build/generated/`、自定义 maven/gradle plugin、`*.proto`、yaml 驱动的代码生成器等
-- **README / 已有文档**：抓取已有的项目说明作为参考
-
-输出："我对这个项目的初步画像"——一份内部草稿，作为 Phase 2 提问的依据。
-
-### Phase 2：Interview（交互访谈）
-
-**A 组：验证猜测**（基于 Phase 1 的发现）
-
-Agent 把每个不确定的猜测变成"是否+追问"的形式：
-
-> 我看到 `pom.xml` 里有一个 `xxx-codegen-plugin`，触发于 `mvn compile`。是用来从 `src/main/resources/api/*.yaml` 生成接口代码吗？
-> - 是 / 否
-> - 如果是，生成的代码在哪个包下？AI 是否应该手动改这些生成代码？
-
-**B 组：模型无法推断的事**（按主题问）
-
-```
-业务：这个项目主要解决什么业务问题？目标用户是谁？
-约定：有没有团队特别坚持的写法（比如"业务逻辑只能写在 Service 层"）？
-陷阱：新人加入后最常踩的 3 个坑是什么？
-边界：哪些目录或文件，AI 绝对不应该改动？
-```
-
-**交互节奏**：
-- 每组问完等用户回应，不堆问题
-- 允许用户在任何时候"打断"补充未问到的内容
-- 用户回答"不知道/不重要"也接受，对应字段留空或简写
-
-### Phase 3：Draft
-
-套用 `templates/` 下的模板，填入访谈结果，生成：
-
-- `AGENTS.md`（50–100 行）：根入口，含项目一句话概述、关键命令、链接到 `docs/agent/` 各文件、元规则
-- `docs/agent/overview.md`：业务意图
-- `docs/agent/build-and-run.md`：构建/运行/测试 + 代码生成流程
-- `docs/agent/conventions.md`：约定与风格
-- `docs/agent/gotchas.md`：陷阱清单
-- `docs/agent/boundaries.md`：AI 边界
-
-全中文输出。
-
-### Phase 4：Review
-
-Agent 列出生成清单：
-
-```
-将创建：
-  AGENTS.md
-  docs/agent/overview.md
-  docs/agent/build-and-run.md
-  ...
-
-确认（y）/ 修改某项（编号）/ 取消（n）？
-```
-
-用户可以指定"第 3 项里这条删掉"或"补一条 xxx 到陷阱清单"。
-
-### Phase 5：Finalize
-
-- 写盘
-- 提示用户："建议把这些文件一并提交到 git，让团队共享"
-- 给出后续使用建议
-
----
-
-## 6. 生成产物的内容骨架
-
-### 6.1 `AGENTS.md`（根入口）
+### 6.1 AGENTS.md（4 段固定结构）
 
 ```markdown
 # 项目名
 
-> 一句话描述：这个项目是干什么的、给谁用的
+> 一句话描述
 
-## 关键命令
+## § 1 项目元信息
+（语言、框架、布局、Agent 工作模式偏好）
 
-构建：xxx
-运行：xxx
-测试：xxx
+## § 2 能力清单与禁区
+（✅ 可做 / ❌ 不可做 / ⚠️ 需确认）
 
-## 详细文档
+## § 3 工作流钩子
+（识别意图 → 必读文档表）
 
-- 业务概述：docs/agent/overview.md
-- 构建与运行：docs/agent/build-and-run.md
-- 约定与风格：docs/agent/conventions.md
-- 陷阱清单：docs/agent/gotchas.md
-- AI 边界：docs/agent/boundaries.md
+## § 4 文档索引
+（每个 docs/agent/*.md 的"何时读"摘要）
 
-## 给 Agent 的元规则
-
-1. 修改代码前，先查 docs/agent/boundaries.md 确认不在禁区
-2. 遇到未文档化的项目约定时，主动建议用户追加到对应文档
-3. （其他项目特有的元规则）
+## § 5 给 Agent 的元规则
+（不可推导优先、不擅自写记忆、任务结束自查等）
 ```
 
-### 6.2 `docs/agent/*.md`
+### 6.2 `docs/agent/_global.md`
 
-每个细节文档独立 50–150 行，主题单一。
+跨模块的全局约定、数据/API 约定、历史决策、SOP。原子条目编号 `G-NNN`。
 
-**`overview.md`**：业务问题、用户群、关键术语、与其他系统的关系
-**`build-and-run.md`**：完整构建/运行/测试流程，特别强调代码生成步骤
-**`conventions.md`**：包结构、命名规则、注入方式、错误处理、日志风格
-**`gotchas.md`**：新人坑、历史 bug 教训、容易误改的地方
-**`boundaries.md`**：只读目录、自动生成代码区、敏感配置、不要重构的遗留模块
+### 6.3 `docs/agent/<module>.md`
+
+按代码模块边界组织（原则 7）。每个模块文件包含：
+- 模块设计与决策（`decision`）
+- 约束与边界（`constraint`）
+- 陷阱与历史坑（`gotcha`，**最有价值**）
+- 本模块 SOP（`sop`）
+
+原子条目编号 `M-NNN`（每个模块独立计数）。
+
+### 6.4 原子条目格式（原则 12、17）
+
+每条记忆是独立的、可单独增删改的"事实"：
+
+```markdown
+### M-003: OAuth refresh 并发死锁  [gotcha]
+- 关联代码: src/auth/oauth.ts:42-58
+- 新增: 2026-05-26
+- 最后验证: 2026-05-26
+- 标签: oauth, race-condition, auth
+
+**事实**: 同一 client_id 并发 token refresh 会触发 provider 端死锁
+**为什么**: provider 对 client_id 加锁，并发请求互相等待
+**反例**: 用 Promise.all 并发刷新——会死锁
+```
+
+字段说明见 `skills/memory-entry-writer/SKILL.md`。
 
 ---
 
-## 7. 自我演化机制
+## 7. 写入闸门：4 道过滤（在 `/remember` 内）
 
-知识库通过**三种互补的方式**持续增长：
+任何写入都要过 4 道闸门。**任一报警都先告知用户，不默默 ban**。
 
-### 7.1 被动演化（元规则驱动）
-
-`AGENTS.md` 内嵌一条元规则：
-
-> **元规则 4**：当你（Agent）在工作中发现项目存在未被文档化的约定、陷阱或习惯做法时，主动提议追加到 `AGENTS.md` 或 `docs/agent/` 对应文件。在用户确认后再写入。
-
-**适用场景**：Agent **自己干活时**踩到坑或发现新约定。
-
-**局限**：依赖模型每次会话都"想起"这条规则，对用户顺嘴提的事容易漏掉——所以有 7.2 的记忆助手补位。
-
-### 7.2 半自动捕获（记忆助手 Skill）
-
-`project-memory-assistant` Skill 在后台监听用户陈述。当用户在对话中**顺嘴**提到项目级事实/约定/陷阱（如"我们都用 HikariCP"、"对了这里要注意 ..."），Skill 主动询问：
-
-> 听起来这是一条项目级约定。要不要我帮你记到 `docs/agent/conventions.md`？
-
-用户确认后，按 `/remember` 的工作流追加。
-
-**适用场景**：用户在做别的事，不会专门停下来归档，但顺口提了一条该记的事。
-
-**节流**：每会话最多触发 3 次；用户拒绝过的不再问；判断不确定时倾向不触发——误打扰代价大于漏记。
-
-### 7.3 主动追加（`/remember` 命令）
-
-用户随时可以显式触发：
-
-```
-/remember 我们这个项目的数据库连接池统一用 HikariCP，配置在 application.yml 的 spring.datasource.hikari 段
-```
-
-`/remember` 命令会：
-
-1. 判断该写到哪个文件（业务/构建/约定/陷阱/边界）
-2. 查重——如果已存在则告知，不会重复写入
-3. 按目标文件的现有格式格式化新内容
-4. 给用户预览并确认
-5. **追加**（不覆盖）到对应文件
-
-**适用场景**：用户明确想归档一条事实，不依赖 Agent 自己注意到。
-
-### 7.4 组合效果
-
-| 触发方 | 机制 | 命令/组件 |
+| 过滤 | 拒绝什么 | 对应原则 |
 |---|---|---|
-| 项目首次初始化 | 5 阶段访谈 | `/init-project` |
-| Agent 自己发现 | 元规则 4 自动提议 | （AGENTS.md 内嵌规则） |
-| 用户顺嘴提到 | 记忆助手监听 + 询问 | `project-memory-assistant` Skill |
-| 用户主动归档 | 显式追加 | `/remember <内容>` |
-
-四者覆盖了"从零开始"、"Agent 主动"、"半自动捕获"、"用户主动"四类典型场景，且用户始终掌握"是否写入"的最终决定权。
+| 1. 可推导性 | 能从代码/配置/目录直接读出来的事实 | 1 |
+| 2. 秘密/快变 | 密钥、token、当前版本号、临时联系人 | 19 |
+| 3. dedupe | 与现有条目语义相同 | 10 |
+| 4. 冲突 | 与现有条目事实矛盾（先 supersede 或 coexist） | 10 |
 
 ---
 
-## 8. 设计取舍说明
+## 8. 设计取舍
 
-| 抉择 | 选定方案 | 理由 |
+| 抉择 | 选择 | 原则 |
 |---|---|---|
-| 跨工具策略 | 只生成 `AGENTS.md`（不复制为 CLAUDE.md 等） | opencode 原生读 AGENTS.md；AGENTS.md 已是跨工具事实标准 |
-| 触发方式 | Skill（哨兵）+ Command（工作流） | 提醒与执行解耦，避免误触发写盘 |
-| 问题清单 | 通用一套 | 起步简单，未来按项目类型扩展 |
-| 维护机制 | 元规则被动 + 记忆助手半自动 + `/remember` 主动 | 三档触发覆盖 Agent 主动、用户顺嘴、用户显式三类场景 |
-| 文档目录 | `docs/agent/`（单数） | 工具中立；与 opencode 自身的 `agents/`（复数）区分 |
-| 哨兵积极度 | 仅在代码项目无 AGENTS.md 时提示一次 | 不烦人 |
-| 模板示例 | 占位符 + 通用说明，不绑定具体语言 | 适应多技术栈，避免无关示例污染 |
+| 跨工具策略 | 只生成 `AGENTS.md`（opencode 原生读，跨工具事实标准） | — |
+| 文档组织 | 按代码模块（`<module>.md`），不按类别（gotchas/conventions/...） | 7 |
+| 写入触发 | 用户显式命令；Skill 只建议不写盘 | 9 |
+| 条目格式 | 原子化、ID 编号、强制时间戳/标签/类型 | 12、17 |
+| 时间戳维护 | 手动字段（`新增` + `最后验证`），由命令自动刷新 | 11 |
+| 模块识别 | 自动检测 + 用户确认补充（hybrid） | 7 |
+| 命令 vs Skill | 命令做入口；Skill 承载共享逻辑（写入规范、审计逻辑、失败回路） | 16 |
+| 内容过滤 | 4 道闸门（不可推导/秘密快变/dedupe/冲突） | 1、10、19 |
+| 自演化 | 三档建议（哨兵 / 对话中 / 任务结束），但**写盘永远显式** | 9、18 |
+
+### 与 v1 的关键差异
+
+| v1 | v2 |
+|---|---|
+| 5 个固定标准文档（overview/build-and-run/conventions/gotchas/boundaries） | 推翻——主题变成模块文档内的章节；跨模块的归 `_global.md` |
+| 6 个可选专题（verification 等） | 推翻——按需在模块文档或 `_global.md` 内开章节 |
+| AGENTS.md "元规则 4：主动追加" | 推翻——Skill 只建议，不写盘 |
+| 记忆助手 Skill 询问"我帮你记到 X 吗" | 软化——只建议跑 `/remember`，不询问代写 |
+| `/remember` 简单分类 + 写入 | 升级——4 道过滤 + 原子条目 + 共享逻辑 |
+| 无 `/forget`、`/update-memory`、`/audit-memory` | 新增三命令支持原则 9、11 |
+| 无任务结束自检 | 新增 `failure-loop` Skill 支持原则 18 |
+| 散落的边界（boundaries.md） | 集中到 AGENTS.md § 2 能力与禁区 |
+| 散落的 SOP（多文档） | 集中到 AGENTS.md § 3 工作流钩子（指引）+ 模块文档 § SOP（步骤） |
 
 ---
 
 ## 9. 扩展与定制
 
-未来如果有需要：
+需要时：
 
-- **加新问题**：编辑 `commands/init-project.md` 的访谈脚本段
-- **加新模板**：在 `templates/` 加文件 + 在 `init-project.md` 引用
-- **按项目类型分支**：在 Phase 1 识别后跳转到对应问题清单（需要时再做）
-- **生成多语言版本**：复制模板出 `templates-en/`，命令加参数选择
+- **加新命令**：在 `commands/` 加 `.md`
+- **加新 Skill**：在 `skills/<name>/SKILL.md`
+- **改条目格式**：编辑 `skills/memory-entry-writer/SKILL.md` 一处即可（被多命令复用）
+- **改审计规则**：编辑 `skills/memory-auditor/SKILL.md`
 
 ---
 
 ## 10. 验收标准
 
-写完之后能做到：
-
-1. 在任意空项目目录运行 `/init-project`，10 分钟内通过对话生成出合理的 `AGENTS.md` + `docs/agent/`
-2. 哨兵 Skill 在无 AGENTS.md 时提示一次，有 AGENTS.md 时完全静默
-3. 生成的 AGENTS.md 在新会话被 opencode 自动加载
-4. 后续会话中：Agent 发现新约定时主动建议追加（元规则生效）；用户顺嘴提到项目级事实时记忆助手会询问归档；用户输入 `/remember <内容>` 能正确分类并追加到对应文档
-5. 全部产物为中文
-
----
-
-## 11. 待你确认
-
-- 这份设计是否覆盖了你预期的能力？
-- 有没有想加 / 想砍的部分？
-- Phase 2 的问题清单（业务 / 约定 / 陷阱 / 边界）够不够？是否需要补充维度？
-
-确认后我会按上述结构产出 `SKILL.md`、`init-project.md` 和 6 个模板文件。
+1. 任意空项目跑 `/init-project`，能识别项目类型 + 模块，生成 AGENTS.md（4 段）+ `_global.md` + N 个模块 doc
+2. `/remember` 在 4 道过滤上都能正确报警（试录入可推导事实、密钥、重复条目、冲突条目）
+3. `/forget <ID>` 能定位并二次确认后删除
+4. `/update-memory <ID>` 修改后"最后验证"自动刷新，"新增"日期不动
+5. `/audit-memory` 能扫出 STALE_CODE / STALE_TIME / DERIVABLE / INCOMPLETE_WHY / DUPLICATE 5 类问题
+6. 哨兵 Skill 无 AGENTS.md 时提示一次
+7. `project-memory-assistant` 在对话中用户陈述项目级事实时建议 `/remember`，**绝不**自己询问代写
+8. `failure-loop` 在任务结束时自检，无候选时静默
+9. 全部产物中文
