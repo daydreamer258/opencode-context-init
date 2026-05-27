@@ -42,11 +42,19 @@ Command（工作流）                                                  + docs/a
     │   ├── SKILL.md                       # 哨兵：检测缺失并提示
     │   └── templates/
     │       ├── AGENTS.md.tmpl             # 根文档模板
-    │       ├── overview.md.tmpl           # 业务概述
-    │       ├── build-and-run.md.tmpl      # 构建与运行
-    │       ├── conventions.md.tmpl        # 约定与风格
-    │       ├── gotchas.md.tmpl            # 陷阱清单
-    │       └── boundaries.md.tmpl         # AI 边界
+    │       ├── overview.md.tmpl           # 业务概述（标准）
+    │       ├── build-and-run.md.tmpl      # 构建与运行（标准）
+    │       ├── conventions.md.tmpl        # 约定与风格（标准）
+    │       ├── gotchas.md.tmpl            # 陷阱清单（标准）
+    │       ├── boundaries.md.tmpl         # AI 边界（标准）
+    │       └── optional/                  # 可选专题模板
+    │           ├── verification.md.tmpl   # 改动如何验证
+    │           ├── deployment.md.tmpl     # 部署流程
+    │           ├── debugging.md.tmpl      # 调试技巧
+    │           ├── data-model.md.tmpl     # 数据模型
+    │           ├── api-design.md.tmpl     # API 设计约定
+    │           ├── performance.md.tmpl    # 性能要求
+    │           └── _custom.md.tmpl        # 自定义文档骨架
     └── project-memory-assistant/
         └── SKILL.md                       # 记忆助手：监听用户陈述并主动询问归档
 ```
@@ -87,7 +95,15 @@ opencode-context-init/        # 本仓库根
     │       ├── build-and-run.md.tmpl
     │       ├── conventions.md.tmpl
     │       ├── gotchas.md.tmpl
-    │       └── boundaries.md.tmpl
+    │       ├── boundaries.md.tmpl
+    │       └── optional/                  # 可选专题模板（按需）
+    │           ├── verification.md.tmpl
+    │           ├── deployment.md.tmpl
+    │           ├── debugging.md.tmpl
+    │           ├── data-model.md.tmpl
+    │           ├── api-design.md.tmpl
+    │           ├── performance.md.tmpl
+    │           └── _custom.md.tmpl        # 自定义文档骨架
     └── project-memory-assistant/
         └── SKILL.md          # 记忆助手：监听陈述、主动询问归档
 ```
@@ -270,7 +286,7 @@ Agent 列出生成清单：
 3. （其他项目特有的元规则）
 ```
 
-### 6.2 `docs/agent/*.md`
+### 6.2 标准文档 `docs/agent/*.md`（每个项目都生成）
 
 每个细节文档独立 50–150 行，主题单一。
 
@@ -279,6 +295,29 @@ Agent 列出生成清单：
 **`conventions.md`**：包结构、命名规则、注入方式、错误处理、日志风格
 **`gotchas.md`**：新人坑、历史 bug 教训、容易误改的地方
 **`boundaries.md`**：只读目录、自动生成代码区、敏感配置、不要重构的遗留模块
+
+### 6.3 可选文档（用户在 `/init-project` 访谈 C 组选择）
+
+不是每个项目都需要，按项目特性勾选。AI 不会强加。
+
+| 文档 | 适用场景 | 包含内容（要点） |
+|---|---|---|
+| `verification.md` | AI 能自己跑命令验证改动的项目（CLI / 测试驱动） | AI 能否自验证 / 验证命令 / 通过判据 / 失败排查 / 不能自验证时给用户的验证清单 |
+| `deployment.md` | 部署流程独立、值得文档化 | 部署目标环境 / 前置检查 / 部署命令 / 回滚 / AI 在部署上的边界 |
+| `debugging.md` | 有项目特有的调试工具/技巧 | 内置/第三方工具 / 日志查看 / 常见错误排查路径 / 远程调试 |
+| `data-model.md` | 数据库/数据模型是核心 | 存储概览 / 核心实体表 / 关键索引/约束 / migration 流程 / AI 边界 |
+| `api-design.md` | 对外 API 有强约定 | API 风格 / URL/资源命名 / 请求响应格式 / 错误码 / 版本管理 / 鉴权 |
+| `performance.md` | 有明确性能要求和已知瓶颈 | 性能指标 / 已知瓶颈 / 敏感区域 / 禁止的反模式 / 压测 profile |
+| 自定义 | 上述都不覆盖时（如 `regulatory-compliance.md`） | 用户自己起名 + 描述用途，Agent 用通用骨架生成 |
+
+每个可选模板顶部有 `<!-- TEMPLATE_QUESTIONS -->` 注释块，`/init-project` 在 Phase 2 C 组会读取它向用户提问，访谈结果直接填模板的 `{{占位符}}`。
+
+**写入逻辑**：
+
+- `/init-project` 在 Phase 2 C 组询问、Phase 3 生成
+- `/remember` 在分类时优先标准 5 → 再扫描已有可选文档 → 最后才提议新建
+- 记忆助手 Skill 推荐目标时同样按这个优先级
+- 任何时候用户都可以手动编辑
 
 ---
 
@@ -350,6 +389,8 @@ Agent 列出生成清单：
 | 文档目录 | `docs/agent/`（单数） | 工具中立；与 opencode 自身的 `agents/`（复数）区分 |
 | 哨兵积极度 | 仅在代码项目无 AGENTS.md 时提示一次 | 不烦人 |
 | 模板示例 | 占位符 + 通用说明，不绑定具体语言 | 适应多技术栈，避免无关示例污染 |
+| 可选文档 | 6 个预设（verification/deployment/debugging/data-model/api-design/performance）+ 自定义 | 标准 5 个适合所有项目；专题文档按需启用，避免无关内容污染 AGENTS.md |
+| 可选文档的问题来源 | 模板顶部 `<!-- TEMPLATE_QUESTIONS -->` 注释 | 每个模板自带问题清单，命令文件不用为每个模板硬编码访谈脚本 |
 
 ---
 
@@ -368,7 +409,7 @@ Agent 列出生成清单：
 
 写完之后能做到：
 
-1. 在任意空项目目录运行 `/init-project`，10 分钟内通过对话生成出合理的 `AGENTS.md` + `docs/agent/`
+1. 在任意空项目目录运行 `/init-project`，10 分钟内通过对话生成出合理的 `AGENTS.md` + 标准 5 个 `docs/agent/` 文档 + 用户选择的可选文档
 2. 哨兵 Skill 在无 AGENTS.md 时提示一次，有 AGENTS.md 时完全静默
 3. 生成的 AGENTS.md 在新会话被 opencode 自动加载
 4. 后续会话中：Agent 发现新约定时主动建议追加（元规则生效）；用户顺嘴提到项目级事实时记忆助手会询问归档；用户输入 `/remember <内容>` 能正确分类并追加到对应文档

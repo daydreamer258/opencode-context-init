@@ -142,6 +142,32 @@ description: 通过交互式访谈，为当前项目生成专属的 Agent 知识
 - 哪些目录或文件，AI **绝对**不应该改动？（举例：自动生成代码、第三方 vendor、敏感配置、即将废弃的遗留模块）
 - 有没有"只能读，不能写"的区域？
 
+### C 组：可选文档
+
+除了 5 个标准文档外，询问用户是否需要额外生成专题文档。**让用户多选**（可以全部跳过）：
+
+> 除了 5 个标准文档（overview / build-and-run / conventions / gotchas / boundaries）外，
+> 是否需要为这个项目额外生成以下专题文档？多选或跳过：
+>
+>   1. `verification.md`  — 改动如何验证（适合 CLI / 测试驱动 / 自动化容易的项目）
+>   2. `deployment.md`    — 部署流程与回滚
+>   3. `debugging.md`     — 项目特定的调试技巧
+>   4. `data-model.md`    — 数据模型 / 数据库 schema
+>   5. `api-design.md`    — 对外 API 设计约定
+>   6. `performance.md`   — 性能要求与瓶颈
+>   7. 自定义文档（你起名 + 描述用途）
+>
+> 选哪些？（如 `1,3` 或 `跳过`，或 `7` 后继续描述）
+
+对每一项被选中的可选文档：
+
+1. 找到对应模板：`templates/optional/<name>.md.tmpl`（自定义用 `_custom.md.tmpl`）
+2. **读取模板顶部的 `<!-- TEMPLATE_QUESTIONS ... -->` 注释块**，里面列了该文档需要问的问题
+3. 把这些问题展示给用户，等待回答
+4. 用户回答用于 Phase 3 填充该模板
+
+如果用户全部跳过 C 组，记录"无可选文档"，Phase 3 时 `{{可选文档链接}}` 占位符填空字符串。
+
 ### 访谈节奏控制
 
 - 每组问完，**显式说"等你回应"**，不要急着进入下一阶段
@@ -155,7 +181,7 @@ description: 通过交互式访谈，为当前项目生成专属的 Agent 知识
 
 模板位置：`~/.config/opencode/skills/project-context-bootstrap/templates/`
 
-需要生成的文件：
+### 标准文档（必生成）
 
 | 模板 | 产出位置 |
 |---|---|
@@ -165,6 +191,35 @@ description: 通过交互式访谈，为当前项目生成专属的 Agent 知识
 | `conventions.md.tmpl` | `docs/agent/conventions.md` |
 | `gotchas.md.tmpl` | `docs/agent/gotchas.md` |
 | `boundaries.md.tmpl` | `docs/agent/boundaries.md` |
+
+### 可选文档（按 C 组选择生成）
+
+| 模板 | 产出位置 |
+|---|---|
+| `optional/verification.md.tmpl` | `docs/agent/verification.md` |
+| `optional/deployment.md.tmpl` | `docs/agent/deployment.md` |
+| `optional/debugging.md.tmpl` | `docs/agent/debugging.md` |
+| `optional/data-model.md.tmpl` | `docs/agent/data-model.md` |
+| `optional/api-design.md.tmpl` | `docs/agent/api-design.md` |
+| `optional/performance.md.tmpl` | `docs/agent/performance.md` |
+| `optional/_custom.md.tmpl` | `docs/agent/<用户起的名>.md` |
+
+**生成时**：
+- 读模板内容，**剥掉**顶部的 `<!-- TEMPLATE_QUESTIONS ... -->` 注释（不要写入产物）
+- 用 C 组访谈结果填充 `{{占位符}}`
+
+### AGENTS.md 的可选文档链接
+
+如果有可选文档被生成，把它们以列表形式填到 `AGENTS.md.tmpl` 中的 `{{可选文档链接}}` 占位符。格式：
+
+```markdown
+**可选文档**：
+- **验证**：[docs/agent/verification.md](docs/agent/verification.md) — 改动如何验证
+- **部署**：[docs/agent/deployment.md](docs/agent/deployment.md) — 部署流程与回滚
+- ...（按用户实际选择）
+```
+
+如果用户全部跳过 C 组，`{{可选文档链接}}` 替换为空字符串（不要留占位符本身）。
 
 ### 套模板规则
 
@@ -183,7 +238,7 @@ description: 通过交互式访谈，为当前项目生成专属的 Agent 知识
 
 ## Phase 4：Review（用户审阅）
 
-向用户展示生成清单：
+向用户展示生成清单（**根据用户实际选择动态列出**，可选文档没选就不列）：
 
 ```
 即将创建以下文件：
@@ -194,6 +249,8 @@ description: 通过交互式访谈，为当前项目生成专属的 Agent 知识
   docs/agent/conventions.md                     [N 行]
   docs/agent/gotchas.md                         [N 行]
   docs/agent/boundaries.md                      [N 行]
+  docs/agent/verification.md                    [N 行]   ← 仅在用户选了
+  ...                                                    ← 其他可选文档
 
 选项：
   y         全部确认，写入磁盘
